@@ -24,15 +24,15 @@ def train_epoch(train_loader, model, cuda, margin, lambda1, lambda2):
     losses = []
     total_loss = 0
 	
-	G = Generator(input_size=g_input_size,
+    G = Generator(input_size=g_input_size,
                   hidden_size=g_hidden_size,
                   output_size=g_output_size,
                   f=generator_activation_function)
-	g_optimizer = optim.Adam(G.parameters(), lr=0.01, betas=optim_betas)
-	net_optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-	
-	criterion_adv = generateLoss(margin, lambda1, lambda2)  
-	criterion_triplet = TripletLoss(margin)
+    g_optimizer = optim.Adam(G.parameters(), lr=0.01, betas=optim_betas)
+    net_optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+	 
+    criterion_adv = generateLoss(margin, lambda1, lambda2)  
+    criterion_triplet = TripletLoss(margin)
 	
 	# start to train
     for batch_idx, (data1, data2, data3) in enumerate(train_loader):
