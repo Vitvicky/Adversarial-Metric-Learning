@@ -64,7 +64,7 @@ class TripletMNIST(Dataset):
 
 
 if __name__ == "__main__":
-    dataset_path = '/home/wzy/Coding/Data/metric_learning/mnist_normal.csv'
+    dataset_path = 'mnist_normal.csv'
     dataset, classes = read_dataset(dataset_path)
     class_count = len(classes)
     test_data = dataset[:100]
