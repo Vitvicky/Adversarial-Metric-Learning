@@ -2,18 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
-
-def read_dataset(file_path):
-    dataset = []
-    labels = set()
-    with open(file_path) as f:
-        for line in f:
-            row = [float(_) for _ in line.split(',')]
-            dataset.append((row[:-1], row[-1:]))
-            labels.add(int(row[-1]))
-
-    return dataset, labels
 	
 	
 # generate adversarial samples
