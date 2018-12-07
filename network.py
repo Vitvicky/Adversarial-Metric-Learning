@@ -33,54 +33,6 @@ class Generator(nn.Module):
         x = self.map3(x)
         return x	
 	
-	
-class TripletMNIST(Dataset):
-	def __init__(self, dataset, n_triplets=10000):
-        self.data = []
-		self.label = []
-		self.triplets = []
-        tensor = cuda.FloatTensor
-        
-        for s in dataset:
-            self.data.append(s[0]/255))
-			self.label.append(s[1]) # here not transfer
-		
-		self.labels_set = set(np.array(self.label))
-		triplets_list = self.make_triplet_list(n_triplets)
-		for line in triplets_list:
-			self.triplets.append((int(line.split()[0]), int(line.split()[1]), int(line.split()[2])))
-	
-	
-	def __getitem__(self, index):
-        idx1, idx2, idx3 = self.triplets[index]
-        img1, img2, img3 = self.data[idx1], self.data[idx2], self.data[idx3]
-    
-        return img1, img2, img3
-
-		
-    def __len__(self):
-        
-		return len(self.triplets)
-			
-			
-	def make_triplet_list(self, ntriplets):
-        print('Processing Triplet Generation ...')
-        np_labels = np.array(self.label)
-
-        triplets_list = []
-        for class_idx in range(10):
-            a = np.random.choice(np.where(np_labels==class_idx)[0], int(ntriplets/10), replace=True)
-            b = np.random.choice(np.where(np_labels==class_idx)[0], int(ntriplets/10), replace=True)
-            while np.any((a-b)==0):
-                np.random.shuffle(b)
-            c = np.random.choice(np.where(np_labels!=class_idx)[0], int(ntriplets/10), replace=True)
-
-            for i in range(a.shape[0]):
-                triplets_list.append([int(a[i]), int(c[i]), int(b[i])])           
-
-
-	
-	
 
 class EmbeddingNet(nn.Module):
     def __init__(self):
