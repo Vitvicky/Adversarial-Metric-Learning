@@ -39,7 +39,7 @@ def noise(size):
     return n
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, lambda_overall, criterion1, criterion2, optimizer, epoch):
     losses = AverageMeter()
 
     # switch to train mode
@@ -55,7 +55,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
         fake_data = generate(noise_data)
         # print(fake_data)
         # loss_triplet = criterion(embedded_x, embedded_y, embedded_z)
-        loss = criterion(embedded_x, fake_data, embedded_y, embedded_z)
+        loss_g = criterion1(embedded_x, fake_data, embedded_y, embedded_z)
+        loss_triplet = criterion2(embedded_x, embedded_y, fake_data)
+        loss = loss_g + lambda_overall * loss_triplet
         losses.update(loss.data[0], data1.size(0))
         #
         # # compute gradient and do optimizer step
@@ -78,6 +80,7 @@ if __name__ == "__main__":
     margin = 1
     lambda1 = 0.1
     lambda2 = 0.5
+    lambda_overall = 0.1
     epochs = 5
 
     triplet_dataset = TripletMNIST(test_data, 200)
@@ -85,11 +88,11 @@ if __name__ == "__main__":
     model = TripletNet(net)
     model.cuda()
 
-    # criterion_triplet = TripletLoss(margin)
-    criterion = generateLoss(margin, lambda1, lambda2)
+    criterion_triplet = TripletLoss(margin)
+    criterion_g = generateLoss(margin, lambda1, lambda2)
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     train_dataloader = DataLoader(dataset=triplet_dataset, shuffle=True, batch_size=10)
 
     for epoch in range(1, epochs + 1):
         # train for one epoch
-        train(train_dataloader, model, criterion, optimizer, epoch)
+        train(train_dataloader, model, lambda_overall, criterion_g, criterion_triplet, optimizer, epoch)
