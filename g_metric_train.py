@@ -85,9 +85,9 @@ def train_generator(data1, data2, data3, fake_data, generator_criterion, generat
     return loss
 
 
-def train(train_loader, model, criterion1, criterion2, optimizer1, optimizer2, epoch):
-    loss_adv = AverageMeter()
-    loss_metric = AverageMeter()
+def train(train_loader, model, criterion_metric, criterion_gen, optimizer_metric, optimizer_gen, epoch):
+    losses_metric = AverageMeter()
+    losses_gen = AverageMeter()
 
     # switch to train mode
     model.train()
@@ -98,50 +98,38 @@ def train(train_loader, model, criterion1, criterion2, optimizer1, optimizer2, e
         # compute output
         embedded_x, embedded_y, embedded_z = model(data1, data2, data3)
         noise_data = noise(N)
-        # print("noise data is: ", noise_data)
         fake_data = generate(noise_data)
 
         # train metric on real triplet
-        # optimizer1.zero_grad()
-        # loss_triplet1 = criterion1(embedded_x, embedded_y, embedded_z)
-        # loss_triplet1.backward(retain_graph=True)
-
-        # train on adversarial triplet
-        loss_triplet = criterion1(embedded_x, embedded_y, fake_data)
-        loss_triplet.backward(retain_graph=True)
-        loss_metric.update(loss_triplet.data[0], embedded_x.size(0))
-        optimizer1.step()
+        metric_loss = train_metric(embedded_x, embedded_y, fake_data, criterion_metric, optimizer_metric)
 
         # train generator
-        optimizer2.zero_grad()
-        loss_generate = criterion2(embedded_x, fake_data, embedded_y, embedded_z)
-        loss_generate.backward()
-        loss_adv.update(loss_generate.data[0], embedded_x.size(0))
-        optimizer2.step()
-        # joint train
-        # loss = loss_triplet + lambda_over * loss_generate
+        generator_loss = train_generator(embedded_x, embedded_y, embedded_z, fake_data, criterion_gen, optimizer_gen)
+
+        # loss = generator_loss + 0.1 * metric_loss
+        losses_metric.update(metric_loss.data[0], data1.size(0))
+        losses_gen.update(generator_loss.data[0], data1.size(0))
 
         if batch_idx % 5 == 0:
             print('Train Epoch: {} [{}/{}]\t'
                   'metric & gen Loss: {:.4f} & {:.4f}\t'.format(
-                epoch, batch_idx * len(data1), len(train_loader.dataset), loss_metric.avg, loss_adv.avg))
+                epoch, batch_idx * len(data1), len(train_loader.dataset), losses_metric.avg, losses_gen.avg))
+            # print("%s: Metric: %s Generator: " % (epoch, extract(metric_loss)[0], extract(generator_loss)[0]))
 
 
 if __name__ == "__main__":
     dataset_path = '/home/wzy/Coding/Data/metric_learning/mnist_normal.csv'
     dataset, classes = read_dataset(dataset_path)
     class_count = len(classes)
-    pre_train_data = dataset[:1000]
-    train_data = dataset[1000:2000]
+    test_data = dataset[:100]
     margin = 1
-    lambda1 = 1
-    lambda2 = 50
+    lambda1 = 0.1
+    lambda2 = 0.5
     pre_epochs = 10
-    # often setting to more than 10000
+    # often setting to 10000
     train_epochs = 10
 
-    pre_train_dataset = TripletMNIST(pre_train_data, 2000)
-    train_dataset = TripletMNIST(train_data, 2000)
+    triplet_dataset = TripletMNIST(test_data, 200)
     net = EmbeddingNet()
     model = TripletNet(net)
     model.cuda()
@@ -152,16 +140,13 @@ if __name__ == "__main__":
     # optimizer_triplet = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     optimizer_triplet = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     optimizer_g = optim.Adam(generate.parameters(), lr=0.0002)
-    pre_dataloader = DataLoader(dataset=pre_train_dataset, shuffle=True, batch_size=64)
-    train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=64)
+    train_dataloader = DataLoader(dataset=triplet_dataset, shuffle=True, batch_size=10)
 
     # first, do pre-train
-    print("start pre-train")
-    for epoch in range(1, pre_epochs + 1):
-        # train for one epoch
-        pre_train(pre_dataloader, model, criterion_triplet, optimizer_triplet, epoch)
+    # for epoch in range(1, pre_epochs + 1):
+    #     # train for one epoch
+    #     pre_train(train_dataloader, model, criterion_triplet, optimizer_triplet, epoch)
 
     # start joint train g and metric
-    print("start train metric and adversarial")
     for epoch in range(1, train_epochs + 1):
         train(train_dataloader, model, criterion_triplet, criterion_g, optimizer_triplet, optimizer_g, epoch)
