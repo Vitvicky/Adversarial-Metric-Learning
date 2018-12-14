@@ -88,7 +88,7 @@ def train_generator(data1, data2, data3, fake_data, generator_criterion, generat
 def train(train_loader, model, criterion1, criterion2, optimizer1, optimizer2, epoch):
     loss_adv = AverageMeter()
     loss_metric = AverageMeter()
-
+    lambda_all = 1.0
     # switch to train mode
     model.train()
     for batch_idx, (data1, data2, data3) in enumerate(train_loader):
@@ -102,21 +102,25 @@ def train(train_loader, model, criterion1, criterion2, optimizer1, optimizer2, e
         fake_data = generate(noise_data)
 
         # train metric on real triplet
-        # optimizer1.zero_grad()
+        optimizer1.zero_grad()
         # loss_triplet1 = criterion1(embedded_x, embedded_y, embedded_z)
         # loss_triplet1.backward(retain_graph=True)
 
         # train on adversarial triplet
         loss_triplet = criterion1(embedded_x, embedded_y, fake_data)
-        loss_triplet.backward(retain_graph=True)
+        # loss_triplet.backward(retain_graph=True)
         loss_metric.update(loss_triplet.data[0], embedded_x.size(0))
-        optimizer1.step()
+        # optimizer1.step()
 
         # train generator
         optimizer2.zero_grad()
         loss_generate = criterion2(embedded_x, fake_data, embedded_y, embedded_z)
-        loss_generate.backward()
         loss_adv.update(loss_generate.data[0], embedded_x.size(0))
+
+        loss = loss_triplet + loss_generate
+        loss.backward(retain_graph=True)
+        optimizer1.step()
+        loss.backward(retain_graph=True)
         optimizer2.step()
         # joint train
         # loss = loss_triplet + lambda_over * loss_generate
@@ -138,7 +142,7 @@ if __name__ == "__main__":
     lambda2 = 50
     pre_epochs = 10
     # often setting to more than 10000
-    train_epochs = 10
+    train_epochs = 100
 
     pre_train_dataset = TripletMNIST(pre_train_data, 2000)
     train_dataset = TripletMNIST(train_data, 2000)
