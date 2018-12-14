@@ -121,15 +121,17 @@ if __name__ == "__main__":
     dataset_path = '/home/wzy/Coding/Data/metric_learning/mnist_normal.csv'
     dataset, classes = read_dataset(dataset_path)
     class_count = len(classes)
-    test_data = dataset[:100]
+    pre_train_data = dataset[:1000]
+    train_data = dataset[1000:2000]
     margin = 1
-    lambda1 = 0.1
-    lambda2 = 0.5
+    lambda1 = 1
+    lambda2 = 10
     pre_epochs = 10
-    # often setting to 10000
-    train_epochs = 10
+    # often setting to more than 10000
+    train_epochs = 100
 
-    triplet_dataset = TripletMNIST(test_data, 200)
+    pre_train_dataset = TripletMNIST(pre_train_data, 2000)
+    train_dataset = TripletMNIST(train_data, 2000)
     net = EmbeddingNet()
     model = TripletNet(net)
     model.cuda()
@@ -139,14 +141,17 @@ if __name__ == "__main__":
     criterion_g = generateLoss(margin, lambda1, lambda2)
     # optimizer_triplet = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     optimizer_triplet = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    optimizer_g = optim.Adam(generate.parameters(), lr=0.0002)
-    train_dataloader = DataLoader(dataset=triplet_dataset, shuffle=True, batch_size=10)
+    optimizer_g = optim.Adam(generate.parameters(), lr=0.001)
+    pre_dataloader = DataLoader(dataset=pre_train_dataset, shuffle=True, batch_size=64)
+    train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=64)
 
     # first, do pre-train
-    # for epoch in range(1, pre_epochs + 1):
-    #     # train for one epoch
-    #     pre_train(train_dataloader, model, criterion_triplet, optimizer_triplet, epoch)
+    print("start pre-train")
+    for epoch in range(1, pre_epochs + 1):
+        # train for one epoch
+        pre_train(pre_dataloader, model, criterion_triplet, optimizer_triplet, epoch)
 
     # start joint train g and metric
+    print("start train metric and adversarial")
     for epoch in range(1, train_epochs + 1):
         train(train_dataloader, model, criterion_triplet, criterion_g, optimizer_triplet, optimizer_g, epoch)
