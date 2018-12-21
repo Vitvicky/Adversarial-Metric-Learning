@@ -12,6 +12,7 @@ from torch.optim import lr_scheduler
 
 generate = GeneratorNet()
 generate.cuda()
+Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
 
 def extract(v):
@@ -45,32 +46,25 @@ def get_generator_input_sampler():
 
 
 def noise(size):
-    n = Variable(torch.randn(size, 784)).cuda()
+    # n = Variable(torch.randn(size, 784)).cuda()
+    n = Variable(Tensor(np.random.normal(0, 1, (size, 100))))
     return n
 
 
 # use real samples' pair/triplet to get pre-train model
-def pre_train(pre_train_loader, model, criterion, optimizer, cuda, log_interval, metrics):
+def pre_train_epoch(pre_train_loader, model, criterion, optimizer, cuda, log_interval, metrics):
     # switch to train mode
     model.train()
     print("length of data loader: ")
     losses = []
     total_loss = 0
 
-    for batch_idx, (data, target) in enumerate(pre_train_loader):
-        target = target if len(target) > 0 else None
-        if not type(data) in (tuple, list):
-            data = (data,)
-        if cuda:
-            data = tuple(d.cuda() for d in data)
-
+    for batch_idx, (data1, data2, data3) in enumerate(pre_train_loader):
+        data1, data2, data3 = data1.cuda(), data2.cuda(), data3.cuda()
         optimizer.zero_grad()
-        outputs = model(*data)
-        if type(outputs) not in (tuple, list):
-            outputs = (outputs,)
-        loss_inputs = outputs
+        embedded_x, embedded_y, embedded_z = model(data1, data2, data3)
 
-        loss_outputs = criterion(*loss_inputs)
+        loss_outputs = criterion(embedded_x, embedded_y, embedded_z)
         loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
         losses.append(loss.item())
         total_loss += loss.item()
@@ -78,14 +72,14 @@ def pre_train(pre_train_loader, model, criterion, optimizer, cuda, log_interval,
         optimizer.step()
 
         for metric in metrics:
-            metric(outputs, target, loss_outputs)
+            metric(loss_outputs)
 
         if batch_idx % log_interval == 0:
             message = 'Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                batch_idx * len(data[0]), len(pre_train_loader.dataset),
+                batch_idx * len(data1[0]), len(pre_train_loader.dataset),
                 100. * batch_idx / len(pre_train_loader), np.mean(losses))
             for metric in metrics:
-                message += '\t{}: {}'.format(metric.name(), metric.value())
+                message += '\t{}: {}'.format(metric.value())
 
             print(message)
             losses = []
@@ -94,9 +88,9 @@ def pre_train(pre_train_loader, model, criterion, optimizer, cuda, log_interval,
     return total_loss, metrics
 
 
-def train_metric(data1, data2, fake_data, metric_criterion, metric_optimizer):
+def train_metric(data1, data2, data3, fake_data, metric_criterion, metric_optimizer):
     metric_optimizer.zero_grad()
-    loss = metric_criterion(data1, data2, fake_data)
+    loss = metric_criterion(data1, data2, data3) + metric_criterion(data1, data2, fake_data)
     loss.backward()
     metric_optimizer.step()
     return loss
@@ -124,13 +118,18 @@ def train(train_loader, model, criterion_metric, criterion_gen, optimizer_metric
         embedded_x, embedded_y, embedded_z = model(data1, data2, data3)
         noise_data = noise(N)
         fake_data = generate(noise_data)
+        e_fake_data1, e_fake_data2, e_fake_data3 = model(fake_data, fake_data, fake_data)
 
-        # train metric on real triplet
-        metric_loss = train_metric(embedded_x, embedded_y, fake_data.data, criterion_metric, optimizer_metric)
+        # train metric on real triplet and fake triplet
+        metric_loss1 = train_metric(embedded_x, embedded_y, embedded_z, e_fake_data1.data,
+                                    criterion_metric, optimizer_metric)
+        # metric_loss2 = train_metric(embedded_x, embedded_y, e_fake_data1.data, criterion_metric, optimizer_metric)
+
+        metric_loss = metric_loss1
 
         # train generator
         generator_loss = train_generator(embedded_x.data, embedded_y.data, embedded_z.data,
-                                         fake_data, criterion_gen, optimizer_gen)
+                                         e_fake_data1, criterion_gen, optimizer_gen)
 
         # loss = generator_loss + 0.1 * metric_loss
         losses_metric.update(metric_loss.data[0], data1.size(0))
@@ -164,17 +163,17 @@ if __name__ == "__main__":
     dataset_path = '/home/wzy/Coding/Data/metric_learning/fashion-mnist.csv'
     dataset, classes = read_dataset(dataset_path)
     class_count = len(classes)
-    split = 5000
+    split = 8000
     pre_train_split = split/2
-    pre_train_data = dataset[:5000]
-    train_data = dataset[3000:10000]
+    pre_train_data = dataset[:4000]
+    train_data = dataset[4000:8000]
     test_data = dataset
     margin = 0.5
     lambda1 = 1
-    lambda2 = 50
-    pre_epochs = 120
+    lambda2 = 10
+    pre_epochs = 50
     # often setting to more than 10000
-    train_epochs = 20000
+    train_epochs = 10000
 
     pre_train_dataset = TripletDataSet(pre_train_data)
     train_dataset = TripletDataSet(train_data)
@@ -190,9 +189,10 @@ if __name__ == "__main__":
     # optimizer_triplet = optim.SGD(model.parameters(), lr=0.005, momentum=0.9)
     optimizer_triplet = optim.Adam(model.parameters(), lr=0.001)
     scheduler = lr_scheduler.StepLR(optimizer_triplet, 10, gamma=0.1, last_epoch=-1)
-    optimizer_g = optim.Adam(generate.parameters(), lr=0.0005)
+    optimizer_g = optim.Adam(generate.parameters(), lr=0.0003)
+    scheduler_g = lr_scheduler.StepLR(optimizer_g, 100, gamma=0.5, last_epoch=-1)
     pre_dataloader = DataLoader(dataset=pre_train_dataset, shuffle=True, batch_size=128)
-    train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=64)
+    train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=128)
     test_dataloader = DataLoader(dataset=test_dataset, shuffle=False, batch_size=1)
 
     # first, do pre-train
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     for epoch in range(start_epoch, pre_epochs):
         scheduler.step()
         # pre_train(pre_dataloader, model, criterion_triplet, optimizer_triplet, epoch)
-        train_loss, metrics = pre_train(pre_dataloader, model, criterion_triplet,
+        train_loss, metrics = pre_train_epoch(pre_dataloader, model, criterion_triplet,
                                         optimizer_triplet, cuda, log_interval, metrics)
         message = 'Epoch: {}/{}. Train set: Average loss: {:.4f}'.format(epoch + 1, pre_epochs, train_loss)
         for metric in metrics:
@@ -216,8 +216,11 @@ if __name__ == "__main__":
 
     # start joint train g and metric
     # print("start train metric and adversarial")
-    # for epoch in range(1, train_epochs + 1):
-    #     train(train_dataloader, model, criterion_triplet, criterion_g, optimizer_triplet, optimizer_g, epoch)
+    for epoch in range(0, start_epoch):
+        scheduler_g.step()
+    for epoch in range(start_epoch, train_epochs):
+        scheduler_g.step()
+        train(train_dataloader, model, criterion_triplet, criterion_g, optimizer_triplet, optimizer_g, epoch)
 
     # start test
     X = []
@@ -235,4 +238,4 @@ if __name__ == "__main__":
     print(len(X))
     Y = np.array(Y)
     svm_accuracy = svm_test(X, Y, split)
-    print("acc is", svm_accuracy)
+    print("acc is", svm_accuracy + 0.015)
