@@ -61,13 +61,21 @@ class generateLoss(nn.Module):
         self.margin = margin
         self.lambda1 = lambda1
         self.lambda2 = lambda2
+        self.pdist = PairwiseDistance(2)
 
     def forward(self, anchor, generate, positive, negative, size_average=True):
         # pdist = nn.PairwiseDistance(p=2)
         distance_1 = (generate - anchor).pow(2).sum(1)  # .pow(.5)
         distance_2 = (generate - negative).pow(2).sum(1)  # .pow(.5)
 
-        distance_adv = F.pairwise_distance(generate, anchor, 2) - F.pairwise_distance(positive, anchor, 2) - self.margin
+        # distance_adv = F.pairwise_distance(generate, anchor, 2)-F.pairwise_distance(positive, anchor, 2)-self.margin
+        d_p = self.pdist.forward(generate, anchor)
+        d_n = self.pdist.forward(positive, anchor)
+        tmp1 = torch.log(d_p + 1)
+        tmp2 = torch.log(d_n + 1)
+        dist_hinge = torch.clamp(tmp2 - self.margin - tmp1, min=0.0)
+        distance_adv = dist_hinge
 
-        gen_loss = distance_1 + self.lambda1 * distance_2 + self.lambda2 * F.relu(distance_adv)
+        # gen_loss = distance_1 + self.lambda1 * distance_2 + self.lambda2 * F.relu(distance_adv)
+        gen_loss = distance_1 + self.lambda1 * distance_2 + self.lambda2 * distance_adv
         return gen_loss.mean()
