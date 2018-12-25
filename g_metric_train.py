@@ -238,4 +238,4 @@ if __name__ == "__main__":
     print(len(X))
     Y = np.array(Y)
     svm_accuracy = svm_test(X, Y, split)
-    print("acc is", svm_accuracy + 0.015)
+    print("acc is", svm_accuracy)
