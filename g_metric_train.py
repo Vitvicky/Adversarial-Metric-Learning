@@ -121,14 +121,14 @@ def train(train_loader, model, criterion_metric, criterion_gen, optimizer_metric
         e_fake_data1, e_fake_data2, e_fake_data3 = model(fake_data, fake_data, fake_data)
 
         # train metric on real triplet and fake triplet
-        metric_loss1 = train_metric(embedded_x, embedded_y, embedded_z, e_fake_data1.data,
+        metric_loss1 = train_metric(embedded_x, embedded_y, embedded_z, e_fake_data1.detach(),
                                     criterion_metric, optimizer_metric)
         # metric_loss2 = train_metric(embedded_x, embedded_y, e_fake_data1.data, criterion_metric, optimizer_metric)
 
         metric_loss = metric_loss1
 
         # train generator
-        generator_loss = train_generator(embedded_x.data, embedded_y.data, embedded_z.data,
+        generator_loss = train_generator(embedded_x.detach(), embedded_y.detach(), embedded_z.detach(),
                                          e_fake_data1, criterion_gen, optimizer_gen)
 
         # loss = generator_loss + 0.1 * metric_loss
@@ -165,15 +165,15 @@ if __name__ == "__main__":
     class_count = len(classes)
     split = 8000
     pre_train_split = split/2
-    pre_train_data = dataset[:4000]
-    train_data = dataset[4000:8000]
+    pre_train_data = dataset[0:7500]
+    train_data = dataset[2000:8000]
     test_data = dataset
     margin = 0.5
-    lambda1 = 1
-    lambda2 = 10
+    lambda1 = 0.001
+    lambda2 = 55
     pre_epochs = 50
     # often setting to more than 10000
-    train_epochs = 10000
+    train_epochs = 20000
 
     pre_train_dataset = TripletDataSet(pre_train_data)
     train_dataset = TripletDataSet(train_data)
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     # optimizer_triplet = optim.SGD(model.parameters(), lr=0.005, momentum=0.9)
     optimizer_triplet = optim.Adam(model.parameters(), lr=0.001)
     scheduler = lr_scheduler.StepLR(optimizer_triplet, 10, gamma=0.1, last_epoch=-1)
-    optimizer_g = optim.Adam(generate.parameters(), lr=0.0003)
+    optimizer_g = optim.Adam(generate.parameters(), lr=0.0002)
     scheduler_g = lr_scheduler.StepLR(optimizer_g, 100, gamma=0.5, last_epoch=-1)
     pre_dataloader = DataLoader(dataset=pre_train_dataset, shuffle=True, batch_size=128)
     train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=128)
@@ -215,7 +215,7 @@ if __name__ == "__main__":
         print(message)
 
     # start joint train g and metric
-    # print("start train metric and adversarial")
+    print("start train metric and adversarial")
     for epoch in range(0, start_epoch):
         scheduler_g.step()
     for epoch in range(start_epoch, train_epochs):
