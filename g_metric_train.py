@@ -1,18 +1,22 @@
-import torch
-import numpy as np
-from network import *
-from loss import *
-from network import *
-from loss import *
 import torch.optim as optim
-from torch.autograd.variable import Variable
-from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn import svm
+from sklearn.metrics import accuracy_score
+from torch.autograd.variable import Variable
 from torch.optim import lr_scheduler
+from loss import *
+from network import *
+from dataset import *
+from sklearn.neighbors import KNeighborsClassifier
+from torch.utils.data import DataLoader as DataLoader
+
+g_hidden_channal = 64
+d_hidden_channal = 64
+image_channal = 1
 
 generate = GeneratorNet()
 generate.cuda()
-Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+# generate.weight_init(mean=0.0, std=0.02)
+Tensor = torch.cuda.FloatTensor
 
 
 def extract(v):
@@ -25,6 +29,7 @@ def stats(d):
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 
@@ -46,16 +51,18 @@ def get_generator_input_sampler():
 
 
 def noise(size):
-    # n = Variable(torch.randn(size, 784)).cuda()
-    n = Variable(Tensor(np.random.normal(0, 1, (size, 100))))
-    return n
+    # z = torch.randn(size, 784)
+    # n = Variable(Tensor(np.random.normal(0, 1, (size, 100))))
+    # z = Variable(2 * ((torch.randn(size, 100).bernoulli_(0.5)) - 0.5))
+    z = Variable(Tensor(np.random.normal(0, 1, (size, 100))))
+    return z.cuda()
 
 
 # use real samples' pair/triplet to get pre-train model
 def pre_train_epoch(pre_train_loader, model, criterion, optimizer, cuda, log_interval, metrics):
     # switch to train mode
     model.train()
-    print("length of data loader: ")
+    # print("length of data loader: ")
     losses = []
     total_loss = 0
 
@@ -90,7 +97,7 @@ def pre_train_epoch(pre_train_loader, model, criterion, optimizer, cuda, log_int
 
 def train_metric(data1, data2, data3, fake_data, metric_criterion, metric_optimizer):
     metric_optimizer.zero_grad()
-    loss = metric_criterion(data1, data2, data3) + metric_criterion(data1, data2, fake_data)
+    loss = 0.3 * (metric_criterion(data1, data2, data3) + metric_criterion(data1, data2, fake_data))
     loss.backward()
     metric_optimizer.step()
     return loss
@@ -102,6 +109,15 @@ def train_generator(data1, data2, data3, fake_data, generator_criterion, generat
     loss.backward()
     generator_optimizer.step()
     return loss
+
+
+# def train_generator(data1_ori, data1_d, data2_ori, data2_d, data3_ori, data3_d, fake_ori, fake_d,
+#                     generator_criterion, generator_optimizer):
+#     generator_optimizer.zero_grad()
+#     loss = 1 * generator_criterion(data1_ori, data1_d, data2_ori, data2_d, data3_ori, data3_d, fake_ori, fake_d)
+#     loss.backward()
+#     generator_optimizer.step()
+#     return loss
 
 
 def train(train_loader, model, criterion_metric, criterion_gen, optimizer_metric, optimizer_gen, epoch):
@@ -130,6 +146,8 @@ def train(train_loader, model, criterion_metric, criterion_gen, optimizer_metric
         # train generator
         generator_loss = train_generator(embedded_x.detach(), embedded_y.detach(), embedded_z.detach(),
                                          e_fake_data1, criterion_gen, optimizer_gen)
+        # generator_loss = train_generator(data1.detach(), embedded_x.detach(), data2.detach(), embedded_y.detach(), data3.detach(),
+        #                                         embedded_z.detach(), fake_data, e_fake_data1, criterion_gen, optimizer_gen)
 
         # loss = generator_loss + 0.1 * metric_loss
         losses_metric.update(metric_loss.data[0], data1.size(0))
@@ -159,26 +177,31 @@ def svm_test(X, Y, split):
     # accuracy = accuracy_score(test_y, predictions)
     return accuracy
 
+
 if __name__ == "__main__":
     dataset_path = '/home/wzy/Coding/Data/metric_learning/fashion-mnist.csv'
     dataset, classes = read_dataset(dataset_path)
     class_count = len(classes)
     split = 8000
     pre_train_split = split/2
-    pre_train_data = dataset[0:7500]
+    pre_train_data = dataset[0:7800]
     train_data = dataset[2000:8000]
     test_data = dataset
     margin = 0.5
     lambda1 = 0.001
-    lambda2 = 55
+    lambda2 = 60
     pre_epochs = 50
     # often setting to more than 10000
-    train_epochs = 20000
+    train_epochs = 10000
 
     pre_train_dataset = TripletDataSet(pre_train_data)
     train_dataset = TripletDataSet(train_data)
     test_dataset = Test_Dataset(test_data)
+
+    # metric learning model initial
     net = EmbeddingNet()
+    # net.weight_init(mean=0.0, std=0.02)
+    # net.apply(initialize_weights)
     model = TripletNet(net)
     model.cuda()
 
@@ -187,9 +210,9 @@ if __name__ == "__main__":
     criterion_g = generateLoss(margin, lambda1, lambda2)
     # optimizer_triplet = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     # optimizer_triplet = optim.SGD(model.parameters(), lr=0.005, momentum=0.9)
-    optimizer_triplet = optim.Adam(model.parameters(), lr=0.001)
+    optimizer_triplet = optim.Adam(model.parameters(), lr=0.001, betas=(0.5, 0.999))
     scheduler = lr_scheduler.StepLR(optimizer_triplet, 10, gamma=0.1, last_epoch=-1)
-    optimizer_g = optim.Adam(generate.parameters(), lr=0.0002)
+    optimizer_g = optim.Adam(generate.parameters(), lr=0.0002, betas=(0.5, 0.999))
     scheduler_g = lr_scheduler.StepLR(optimizer_g, 100, gamma=0.5, last_epoch=-1)
     pre_dataloader = DataLoader(dataset=pre_train_dataset, shuffle=True, batch_size=128)
     train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=128)
@@ -207,7 +230,7 @@ if __name__ == "__main__":
         scheduler.step()
         # pre_train(pre_dataloader, model, criterion_triplet, optimizer_triplet, epoch)
         train_loss, metrics = pre_train_epoch(pre_dataloader, model, criterion_triplet,
-                                        optimizer_triplet, cuda, log_interval, metrics)
+                                              optimizer_triplet, cuda, log_interval, metrics)
         message = 'Epoch: {}/{}. Train set: Average loss: {:.4f}'.format(epoch + 1, pre_epochs, train_loss)
         for metric in metrics:
             message += '\t{}: {}'.format(metric.name(), metric.value())
@@ -223,6 +246,7 @@ if __name__ == "__main__":
         train(train_dataloader, model, criterion_triplet, criterion_g, optimizer_triplet, optimizer_g, epoch)
 
     # start test
+    print("start test")
     X = []
     Y = []
     for s in test_dataloader:
