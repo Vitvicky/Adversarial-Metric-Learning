@@ -10,10 +10,10 @@ class PairwiseDistance(torch.nn.Module):
 
     def forward(self, x1, x2, eps=1e-6):
         assert x1.size() == x2.size()
-        diff = torch.abs(x1-x2)
-        out = torch.pow(diff+eps, self.norm).sum(dim=1, keepdim=True)
+        diff = torch.abs(x1 - x2)
+        out = torch.pow(diff + eps, self.norm).sum(dim=1, keepdim=True)
 
-        return torch.pow(out, 1./self.norm)
+        return torch.pow(out, 1. / self.norm)
 
 
 class TripletLoss(nn.Module):
@@ -30,6 +30,7 @@ class TripletLoss(nn.Module):
         dist_hinge = torch.clamp(tmp1 + self.margin - tmp2, min=0.0)
         loss = torch.mean(dist_hinge)
         return loss
+
         # distance_positive = (anchor - positive).pow(2).sum(1)  # .pow(.5)
         # distance_negative = (anchor - generate).pow(2).sum(1)  # .pow(.5)
         # losses = F.relu(distance_positive - distance_negative + self.margin)
@@ -54,6 +55,31 @@ class OnlineTripletLoss(nn.Module):
 
         return losses.mean(), len(triplets)
 
+
+# class generateLoss(nn.Module):
+#     def __init__(self, margin, lambda1, lambda2):
+#         super(generateLoss, self).__init__()
+#         self.margin = margin
+#         self.lambda1 = lambda1
+#         self.lambda2 = lambda2
+#         self.pdist = PairwiseDistance(2)
+#
+#     def forward(self, anchor_ori, anchor_d, positive_ori, pos_d, negative_ori, neg_d, generate_ori, gen_d, size_average=True):
+#         # pdist = nn.PairwiseDistance(p=2)
+#         generate_ori = generate_ori.view(generate_ori.size(0), 784)
+#         distance_1 = self.pdist.forward(gen_d, anchor_d)  # .pow(.5)
+#         distance_2 = self.pdist.forward(gen_d, neg_d)  # .pow(.5)
+#
+#         d_p = self.pdist.forward(pos_d, anchor_d)
+#         d_n = self.pdist.forward(gen_d, anchor_d)
+#         tmp1 = torch.log(d_p + 1)
+#         tmp2 = torch.log(d_n + 1)
+#         dist_hinge = torch.clamp(tmp2 - self.margin - tmp1, min=0.0)
+#         distance_adv = dist_hinge
+#
+#         # gen_loss = distance_1 + self.lambda1 * distance_2 + self.lambda2 * F.relu(distance_adv)
+#         gen_loss = distance_1 + self.lambda1 * distance_2 + self.lambda2 * distance_adv
+#         return gen_loss.mean()
 
 class generateLoss(nn.Module):
     def __init__(self, margin, lambda1, lambda2):
